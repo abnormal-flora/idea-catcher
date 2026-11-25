@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<!--
+  IDEA CATCHER
+  This one file is the whole app. It has three parts:
+    1. <head> + <style>  = how the page LOOKS (colours, sizes)
+    2. <body>            = what is ON the page (the big button, the list)
+    3. <script>          = what the page DOES (listen to you, save ideas)
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Makes the page fit a phone screen instead of looking tiny -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f2937">
+  <title>Idea Catcher</title>
+  <!-- The "manifest" lets you add the app to your phone's home screen -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg">
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111827;
+      color: #f9fafb;
+      margin: 0;
+      padding: 24px 16px 48px;
+      max-width: 560px;
+      margin-inline: auto;
+    }
+    h1 { text-align: center; font-size: 1.6rem; margin: 0 0 24px; }
+
+    /* The big round talk button */
+    #talk {
+      display: block;
+      width: 220px;
+      height: 220px;
+      margin: 0 auto;
+      border: none;
+      border-radius: 50%;
+      background: #f59e0b;
+      color: #111827;
+      font-size: 1.15rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 30px rgba(245, 158, 11, 0.35);
+    }
+    #talk .mic { display: block; font-size: 4rem; line-height: 1.2; }
+    #talk.listening { background: #ef4444; animation: pulse 1.2s infinite; }
+    #talk:disabled { background: #4b5563; box-shadow: none; }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.05); }
+    }
+
+    /* The line of text under the button ("Listening...", "Saved!") */
+    #status { min-height: 3em; text-align: center; margin: 16px 0; color: #d1d5db; }
+
+    /* The small "or type it" box */
+    form { display: flex; gap: 8px; margin-bottom: 28px; }
+    form input {
+      flex: 1; padding: 12px; font-size: 1rem;
+      border-radius: 10px; border: 1px solid #374151;
+      background: #1f2937; color: #f9fafb;
+    }
+    form button {
+      padding: 12px 16px; font-size: 1rem; border: none;
+      border-radius: 10px; background: #374151; color: #f9fafb;
+    }
+
+    /* The list of saved ideas */
+    h2 { font-size: 1.1rem; color: #9ca3af; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li {
+      background: #1f2937; border-radius: 12px;
+      padding: 12px 14px; margin-bottom: 10px;
+      display: flex; gap: 10px; align-items: flex-start;
+    }
+    li .text { flex: 1; white-space: pre-wrap; word-break: break-word; }
+    li time { display: block; font-size: 0.8rem; color: #9ca3af; margin-top: 4px; }
+    li button {
+      background: none; border: none; color: #9ca3af;
+      font-size: 1.2rem; cursor: pointer; padding: 0 4px;
+    }
+    .empty { color: #6b7280; text-align: center; }
+  </style>
+</head>
+
+<body>
+  <h1>💡 Idea Catcher</h1>
+
+  <!-- THE BIG BUTTON -->
+  <button id="talk" type="button">
+    <span class="mic">🎤</span>
+    <span id="talkLabel">Tap to speak</span>
+  </button>
+
+  <p id="status"></p>
+
+  <!-- Backup: type an idea if speaking isn't possible -->
+  <form id="typeForm">
+    <input id="typeInput" placeholder="…or type an idea" autocomplete="off">
+    <button type="submit">Save</button>
+  </form>
+
+  <h2>My ideas (<span id="count">0</span>)</h2>
+  <ul id="list"></ul>
+
+  <script>
+    // ---- Grab the parts of the page we need to work with ----
+    const talkButton = document.getElementById('talk');
+    const talkLabel  = document.getElementById('talkLabel');
+    const statusText = document.getElementById('status');
+    const typeForm   = document.getElementById('typeForm');
+    const typeInput  = document.getElementById('typeInput');
+    const listEl     = document.getElementById('list');
+    const countEl    = document.getElementById('count');
+
+    // ---- SAVING: ideas live in "localStorage" ----
+    // localStorage is a small private storage box inside your phone's browser.
+    // Nothing here is sent to any server. Each idea is saved as
+    // { text: "the idea", at: <the time it was saved> }.
+    const STORAGE_KEY = 'idea-catcher-ideas';
+
+    function loadIdeas() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveIdeas(ideas) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ideas));
+    }
+
+    function addIdea(text) {
+      text = text.trim();
+      if (!text) return false;
+      const ideas = loadIdeas();
+      ideas.unshift({ text: text, at: Date.now() }); // newest goes on top
+      saveIdeas(ideas);
+      showIdeas();
+      return true;
+    }
+
+    function deleteIdea(index) {
+      if (!confirm('Delete this idea?')) return;
+      const ideas = loadIdeas();
+      ideas.splice(index, 1);
+      saveIdeas(ideas);
+      showIdeas();
+    }
+
+    // Ask the browser to keep our storage box safe and not clear it
+    // when the phone is low on space. (Harmless if the browser says no.)
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist();
+    }
+
+    // ---- SHOWING: draw the list of ideas on the page ----
+    function showIdeas() {
+      const ideas = loadIdeas();
+      countEl.textContent = ideas.length;
+      listEl.innerHTML = '';
+
+      if (ideas.length === 0) {
+        listEl.innerHTML = '<li class="empty">No ideas yet. Tap the button and talk!</li>';
+        return;
+      }
+
+      ideas.forEach(function (idea, index) {
+        const item = document.createElement('li');
+
+        const textBox = document.createElement('div');
+        textBox.className = 'text';
+        textBox.textContent = idea.text; // textContent = shown as plain text, safely
+
+        const when = document.createElement('time');
+        when.textContent = new Date(idea.at).toLocaleString();
+        textBox.appendChild(when);
+
+        const del = document.createElement('button');
+        del.textContent = '✕';
+        del.setAttribute('aria-label', 'Delete idea');
+        del.onclick = function () { deleteIdea(index); };
+
+        item.appendChild(textBox);
+        item.appendChild(del);
+        listEl.appendChild(item);
+      });
+    }
+
+    // ---- LISTENING: turn your voice into text ----
+    // Chrome has a built-in "speech recognition" feature. Older Chrome calls it
+    // webkitSpeechRecognition, so we check for both names.
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognizer = null;
+    let listening = false;
+
+    function setListeningLook(on) {
+      listening = on;
+      talkButton.classList.toggle('listening', on);
+      talkLabel.textContent = on ? 'Listening… tap to stop' : 'Tap to speak';
+    }
+
+    if (!Recognition) {
+      talkButton.disabled = true;
+      talkLabel.textContent = 'Voice not available';
+      statusText.textContent =
+        "This browser can't turn speech into text. Open the app in Chrome — or type below.";
+    }
+
+    talkButton.addEventListener('click', function () {
+      // Tapping again while listening = stop early (what you said so far still saves)
+      if (listening) {
+        recognizer.stop();
+        return;
+      }
+
+      recognizer = new Recognition();
+      recognizer.lang = navigator.language || 'en-US'; // listen in your phone's language
+      recognizer.interimResults = true;  // show words as you speak
+      recognizer.continuous = false;     // stop by itself when you pause
+
+      let heard = '';      // the words the recognizer is sure about
+      let hadError = false;
+
+      recognizer.onstart = function () {
+        setListeningLook(true);
+        statusText.textContent = 'Listening… say your idea.';
+      };
+
+      recognizer.onresult = function (event) {
+        let guess = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const piece = event.results[i];
+          if (piece.isFinal) heard += piece[0].transcript;
+          else guess += piece[0].transcript;
+        }
+        statusText.textContent = (heard + guess) || 'Listening…';
+      };
+
+      recognizer.onerror = function (event) {
+        hadError = true;
+        const messages = {
+          'not-allowed': 'Microphone is blocked. Allow the microphone for this site in Chrome settings, then try again.',
+          'service-not-allowed': 'Microphone is blocked. Allow the microphone for this site in Chrome settings, then try again.',
+          'no-speech': "I didn't hear anything. Tap and try again.",
+          'audio-capture': "Couldn't find a microphone.",
+          'network': 'Speech-to-text needs an internet connection. You can type the idea below instead.'
+        };
+        statusText.textContent = messages[event.error] || ('Something went wrong (' + event.error + '). Try again.');
+      };
+
+      recognizer.onend = function () {
+        setListeningLook(false);
+        if (addIdea(heard)) {
+          statusText.textContent = '✅ Saved: "' + heard.trim() + '"';
+        } else if (!hadError) {
+          statusText.textContent = "I didn't catch anything. Tap and try again.";
+        }
+      };
+
+      recognizer.start();
+    });
+
+    // ---- TYPING backup ----
+    typeForm.addEventListener('submit', function (event) {
+      event.preventDefault(); // stop the page from reloading
+      if (addIdea(typeInput.value)) {
+        statusText.textContent = '✅ Saved!';
+        typeInput.value = '';
+      }
+    });
+
+    // Draw the list as soon as the app opens
+    showIdeas();
+  </script>
+</body>
+</html>
