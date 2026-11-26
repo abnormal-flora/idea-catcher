@@ -82,6 +82,16 @@
       font-size: 1.2rem; cursor: pointer; padding: 0 4px;
     }
     .empty { color: #6b7280; text-align: center; }
+
+    /* The backup buttons at the bottom */
+    .backup { margin-top: 32px; padding-top: 20px; border-top: 1px solid #374151; text-align: center; }
+    .backup h2 { margin: 0 0 6px; }
+    .backup p { color: #9ca3af; font-size: 0.9rem; margin: 0 0 14px; }
+    .backup button {
+      padding: 12px 16px; margin: 4px; font-size: 1rem; border: none;
+      border-radius: 10px; background: #374151; color: #f9fafb; cursor: pointer;
+    }
+    #backupStatus { min-height: 1.5em; color: #d1d5db; }
   </style>
 </head>
 
@@ -104,6 +114,15 @@
 
   <h2>My ideas (<span id="count">0</span>)</h2>
   <ul id="list"></ul>
+
+  <!-- BACKUP: make a copy of all your ideas outside the app -->
+  <section class="backup">
+    <h2>Back up my ideas</h2>
+    <p>Your ideas only live in this app. Make a copy now and then, just in case.</p>
+    <button id="copyAll" type="button">📋 Copy all</button>
+    <button id="downloadAll" type="button">⬇️ Save backup file</button>
+    <p id="backupStatus"></p>
+  </section>
 
   <script>
     // ---- Grab the parts of the page we need to work with ----
@@ -271,6 +290,68 @@
         statusText.textContent = '✅ Saved!';
         typeInput.value = '';
       }
+    });
+
+    // ---- BACKUP: copy or download all ideas as plain text ----
+    const backupStatus = document.getElementById('backupStatus');
+
+    // Turn the saved ideas into one block of readable text, oldest first, like:
+    //   25/11/2026, 14:03
+    //   buy more coffee
+    function ideasAsText() {
+      const ideas = loadIdeas().slice().reverse();
+      return ideas.map(function (idea) {
+        return new Date(idea.at).toLocaleString() + '\n' + idea.text;
+      }).join('\n\n') + '\n';
+    }
+
+    // "Copy all": puts every idea on the phone's clipboard, ready to paste
+    // into an email, Google Keep, a message to yourself, etc.
+    // The older way of copying: put the text in a hidden box, select it, copy.
+    // Used if the newer way below is refused.
+    function oldStyleCopy(text) {
+      const box = document.createElement('textarea');
+      box.value = text;
+      box.setAttribute('readonly', '');
+      box.style.position = 'fixed';
+      box.style.opacity = '0';
+      document.body.appendChild(box);
+      box.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      box.remove();
+      return ok;
+    }
+
+    document.getElementById('copyAll').addEventListener('click', function () {
+      if (loadIdeas().length === 0) { backupStatus.textContent = 'No ideas to copy yet.'; return; }
+      const text = ideasAsText();
+      function worked() { backupStatus.textContent = '✅ Copied! Now paste it somewhere safe (email, notes app…).'; }
+      function failed() {
+        if (oldStyleCopy(text)) worked();
+        else backupStatus.textContent = "Couldn't copy. Try \"Save backup file\" instead.";
+      }
+      backupStatus.textContent = '';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(worked, failed);
+      } else {
+        failed();
+      }
+    });
+
+    // "Save backup file": makes a .txt file with the date in its name and
+    // hands it to the phone's Downloads folder.
+    document.getElementById('downloadAll').addEventListener('click', function () {
+      if (loadIdeas().length === 0) { backupStatus.textContent = 'No ideas to save yet.'; return; }
+      const file = new Blob([ideasAsText()], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(file);
+      link.download = 'idea-catcher-backup-' + new Date().toISOString().slice(0, 10) + '.txt';
+      document.body.appendChild(link);
+      link.click();                 // pretend-click the link to start the download
+      link.remove();
+      setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+      backupStatus.textContent = '✅ Saved to your Downloads folder.';
     });
 
     // Draw the list as soon as the app opens
